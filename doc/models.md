@@ -61,23 +61,22 @@ constants, docs, and URL tests in the same PR.
 
 Official export properties:
 
-| Property       | TFLite                                        | Core ML                                 |
-| -------------- | --------------------------------------------- | --------------------------------------- |
-| Model IDs      | `yolo26{n,s,m,l,x}`                           | `yolo26{n,s,m,l,x}`                     |
-| Tasks          | detect, seg, sem, depth, cls, pose, obb       | detect, seg, sem, depth, cls, pose, obb |
-| Format         | `.tflite`                                     | `.mlpackage.zip`                        |
-| Quantization   | w8a32 LiteRT (int8 weights, FP32 activations) | int8 Core ML                            |
-| `imgsz`        | `224` cls; `640` others                       | `224` cls; `640` others                 |
-| `nms`          | `False`                                       | `False`                                 |
-| `end2end`      | `False`                                       | `False` cls/sem/depth; `True` others    |
-| Calibration    | None (w8a32 dynamic-range)                    | exporter default                        |
-| Postprocessing | Android native                                | Swift/Core ML                           |
+| Property           | TFLite                                        | Core ML                                 |
+| ------------------ | --------------------------------------------- | --------------------------------------- |
+| Model IDs          | `yolo26{n,s,m,l,x}`                           | `yolo26{n,s,m,l,x}`                     |
+| Tasks              | detect, seg, sem, depth, cls, pose, obb       | detect, seg, sem, depth, cls, pose, obb |
+| Format             | `.tflite`                                     | `.mlpackage.zip`                        |
+| Quantization       | w8a32 LiteRT (int8 weights, FP32 activations) | int8 Core ML                            |
+| `imgsz`            | `224` cls; `640` others                       | `224` cls; `640` others                 |
+| `nms`              | `None`                                        | `False`                                 |
+| `end2end` metadata | `False`                                       | `False` cls/sem/depth; `True` others    |
+| Calibration        | None (w8a32 dynamic-range)                    | exporter default                        |
+| Postprocessing     | Android native                                | Swift/Core ML                           |
 
-The TFLite export script passes both `nms=False` and `end2end=False`. `nms=False` excludes an exported NMS operator,
-while `end2end=False` disables the YOLO26 end-to-end head for the Android LiteRT conversion path. The shipped Core ML
-assets use `end2end=True` for detect, segment, pose, and OBB and `end2end=False` for classification, semantic, and
-depth. The Android `w8a32` export is dynamic-range quantization (int8 weights, FP32 activations), so it needs no
-calibration data.
+Export scripts require `ultralytics>=8.4.142`. LiteRT uses `nms=None` for raw one-to-many outputs with Android-side
+NMS. Core ML uses `nms=False` for NMS-free detect, segment, pose, and OBB outputs; classification, semantic, and depth
+retain their native outputs. `nms=True` embeds NMS where supported. The `end2end` metadata field describes the
+exported graph; use `nms` to configure exports. Android `w8a32` uses int8 weights and FP32 activations without calibration.
 
 If you want the simplest “start from the default Ultralytics model” entry point, prefer `YOLO.defaultOfficialModel()`.
 
@@ -203,8 +202,7 @@ Use Linux x86 or macOS with Python ≥3.10 for LiteRT export.
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-uv pip install "ultralytics-opencv-headless[export-litert]>=8.4.83"
+uv pip install --torch-backend cpu "ultralytics-opencv-headless[export-litert]>=8.4.142"
 uv run python scripts/export-tflite-models.py --verify
 ```
 
@@ -212,14 +210,15 @@ Use `--upload --repo ultralytics/yolo-flutter-app --tag v0.6.6` to replace the e
 script exports YOLO26 `n/s/m/l/x` models for every task in its `TASKS` registry, including depth. Output files are
 written under `exports/yolo26-tflite/release-assets/` and are ignored by Git. The `w8a32` format (int8 weights, FP32
 activations) is dynamic-range quantization, so no calibration data is required. Use Ultralytics QNN export on a
-supported QNN export host to export the matching nano QNN assets for HTP v73 and v81.
+supported QNN export host with `ultralytics>=8.4.142` and `nms=None` to export the matching nano QNN assets for HTP v73 and v81. QNN uses raw one-to-many outputs with Android-side NMS; it does not support the NMS-free head or embedded NMS.
 
 Android inference runs on LiteRT 2.x with an automatic GPU -> CPU accelerator ladder. w8a32 assets are the official download artifacts (the smallest GPU-compatible litert format); the GPU delegate compiles the whole graph on supported devices and otherwise falls back to CPU. GPU coverage still depends on the device driver and graph, so confirm delegate placement on your target hardware (the GPU delegate runs the graph in FP16):
 
 ```python
+# Requires ultralytics>=8.4.142
 from ultralytics import YOLO
 
-YOLO("yolo26n.pt").export(format="litert", nms=False, end2end=False, imgsz=640)
+YOLO("yolo26n.pt").export(format="litert", nms=None, imgsz=640)
 # Classification models use imgsz=224.
 ```
 
